@@ -1,0 +1,77 @@
+
+- 
+  name: AWS instances
+  hosts: master1
+  roles:
+    - master
+
+- 
+  name: AWS instances
+  hosts: slave1
+  roles:
+    - slave
+
+- 
+  name: Adding Host Keys
+  hosts: manager
+  gather_facts: no 
+  tasks:
+   -
+    name: Adding Host Keys
+    shell: ssh-keyscan -H {{ hostvars['node'].ansible_host }} >> ~/.ssh/known_hosts
+    args:
+        executable: /bin/bash 
+    delegate_to: manager
+    register: host_key
+
+   - 
+     debug: 
+       var: host_key
+
+ 
+- 
+  name: Adding Host Keys
+  hosts: node
+  gather_facts: no 
+  tasks:
+   -
+    name: Adding Host Keys
+    shell: ssh-keyscan -H {{ hostvars['manager'].ansible_host }} >> ~/.ssh/known_hosts
+    args:
+        executable: /bin/bash
+    delegate_to: node
+    register: host_key_node
+
+   - 
+     debug:  
+       var: host_key_node
+
+
+- 
+  name: Checking Passwordless ssh 
+  hosts: pass
+ 
+  tasks:
+   - name: Checking
+     shell: ssh {{ hostvars['node1'].ansible_user }}@{{ hostvars['node1'].ansible_host }} echo "connected to $(hostname -f)"   
+     args:
+        executable: /bin/bash
+     register: successfull
+     delegate_to: manager1
+     
+   - debug:
+      var: successfull.stdout
+
+- 
+  name: Establishing Docker Swarm 
+  hosts: master1
+  gather_facts: no 
+  vars:
+    - master: awsmaster
+    - slave:  awsslave
+    
+  roles: 
+    - docker
+ 
+
+     

@@ -1,0 +1,175 @@
+---
+
+ - name: Updating
+   command: apt update
+   become: yes
+   become_method: sudo
+
+ - name: Installing Docker On master
+   apt:
+    name: docker.io
+    state: present
+   become: yes
+   become_method: sudo
+
+ - name: Installing AWS-CLI tool
+   apt: 
+    name: awscli
+    state: latest
+   become: yes
+   become_method: sudo
+
+ -  name: Insalling pip
+    apt: 
+     name: python-pip
+     state: present
+    become: yes
+    become_method: sudo 
+ - 
+    name: Docker Mod
+    command: sudo usermod -aG docker root
+    ignore_errors: true
+
+ -  name: Checking for .aws Directory
+    command: stat ~/.aws
+    register: aws_exist
+    ignore_errors: true
+
+ -  debug: 
+      var: "aws_exist.stdout"
+
+ -  name: Creating Directory
+    file:
+     path: ~/.aws
+     state: directory
+     owner: ubuntu   
+     group: ubuntu
+     mode: "751"
+    when: aws_exist.stdout==""
+    ignore_errors: true
+
+ -  name: Configuring AWS-CLI
+    copy: 
+       src: "{{role_path}}/files/config"
+       dest: ~/.aws/
+       mode: "644"
+    register: copied_config
+
+  
+ -  name: Configuring AWS-CLI
+    copy: 
+       src: "{{role_path}}/files/credentials"
+       dest: ~/.aws/
+       mode: "644"
+    register: copied_config2
+ 
+ -  name: Copying Template
+    copy: 
+       src: "{{role_path}}/files/nginx.yml"
+       dest: ~/nginx.yml
+    register: copied_nginx
+    tags: copying_nginx
+
+ -  name: Checking if docker-machine exist or not
+    command: which docker-machine
+    register: dockerm_exist
+    ignore_errors: true
+
+ -  name: Installing Docker-machine 
+    shell: base=https://github.com/docker/machine/releases/download/v0.16.0 && curl -L $base/docker-machine-$(uname -s)-$(uname -m) >/tmp/docker-machine && sudo mv /tmp/docker-machine /usr/local/bin/docker-machine && chmod +x /usr/local/bin/docker-machine
+    register: docker-machine
+    when:  dockerm_exist.rc==1
+ 
+ -  name: Creating  Master
+    shell: docker-machine create "{{master}}" --driver amazonec2 
+    ignore_errors: true
+    tags: create_master
+ 
+ -  name: Going to sleep
+    command: sleep 30
+
+ -  name: Getting IP
+    shell: docker-machine ip "{{master}}"
+    register: master_ip
+    tags: get_master_ip
+ 
+
+ -  name: Setting Environment
+    shell: docker-machine env "{{master}}" 
+    delegate_to: master1
+    register: docker_master
+    ignore_errors: true
+    tags: set_env
+
+ -  name: Eval
+    shell: eval $(docker-machine env {{master}})
+    delegate_to: master1
+    ignore_errors: true
+    tags: eval
+
+ -  name: Going to sleep
+    command: sleep 30
+
+ -  name: Creating Node
+    shell: docker-machine create "{{slave}}" --driver amazonec2
+    register: docker_slave
+    ignore_errors: true
+    tags: create_slave
+
+ -  name: Going to sleep
+    command: sleep 30
+
+
+ -  name: Docker Swarm Initialization
+    shell: docker-machine ssh {{master}} sudo docker swarm init --advertise-addr {{hostvars['master1']['master_ip']['stdout']}}
+    delegate_to: master1
+    register: swarm_init
+    tags: swarm_init_get
+   
+# ADD reponse to change Security Group For Docker-Machien with access to AnyWhere
+
+ -  name: Worker Token
+    shell: docker-machine ssh {{master}} sudo docker swarm join-token worker | grep docker | sed -e 's/^\s*//' -e '/^$/d' | awk {print$1}
+    register: worker_token_get
+    delegate_to: master1
+    tags: worker_token
+
+ -  debug:
+      var: "worker_token_get.stdout"
+    tags: worker_token_display
+    
+ -  name: Joining ""{{master}}"" as Working Node
+    shell: docker-machine ssh {{slave}} sudo {{hostvars['master1']['worker_token_get']['stdout']}}
+    delegate_to: master1
+    register: join_master
+    tags: join_masternode
+
+ -  debug:
+      var: join_master.stdout
+    tags: join_master_display
+
+ -  name: Deploying Nginx On Swarm Step I
+    shell: cat nginx.yml | docker-machine ssh {{master}} "cat >> nginx.yml"
+    register: nginx_step1
+    delegate_to: master1
+    tags: nginx_step1
+   
+ -  name: Deploying Nginx On Swarm Step II
+    shell:  docker-machine ssh {{master}} sudo docker stack deploy --compose-file nginx.yml web
+    register: nginx_step2
+    delegate_to: master1
+    tags: nginx_step2
+
+ -  name: Wait For deploy 
+    command: sleep 30 
+
+ -  name: Stats
+    shell: docker-machine ssh {{master}} sudo docker service ls
+    delegate_to: master1
+    register: stat
+    tags: stats
+
+ -  debug:
+     var: stat
+    tags: debug_stat_display
+ 

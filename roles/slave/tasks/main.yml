@@ -1,0 +1,65 @@
+
+  -
+   name: Checking for .ssh Directory
+   command: stat ~/.ssh
+   register: ssh_dontexist
+   ignore_errors: true
+  -  
+   name: Creating Directory
+   file:
+      path: ~/.ssh
+      state: directory
+      owner: ubuntu      
+      group: ubuntu     
+      mode: 700
+   when: ssh_dontexist.stdout==""
+   ignore_errors: true
+  -
+   name: Copying Files
+   copy:
+     src: "{{role_path}}/files/id_rsa.pub"
+     dest: ~/.ssh/id_rsa.pub
+     mode: '0640'
+   register: copied
+
+  - 
+   name: Running Script
+   shell: cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+   args:
+      executable: /bin/bash
+   delegate_to: slave1
+   register: copied_2
+  
+
+  -
+   name: Replacing SSHD config-file
+   template: 
+     src: "{{role_path}}/files/sshd_config"  
+     dest: /etc/ssh/sshd_config
+     backup: yes
+   become: yes
+   become_user: root
+   register: replaced_sshd
+   
+     
+
+  -
+   name: Replacing SSH config-file
+   template: 
+     src: "{{role_path}}/files/ssh_config"  
+     dest: /etc/ssh/ssh_config
+     backup: yes
+   become: yes
+   become_user: root
+   notify: restart ssh
+   register: replaced
+  
+  
+  
+
+
+   
+
+
+  
+

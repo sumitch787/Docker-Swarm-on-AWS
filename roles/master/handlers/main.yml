@@ -1,0 +1,9 @@
+
+    -
+      name: restart ssh
+      service:
+        name: sshd #change to ssh
+        state: restarted
+      become: yes
+      become_user: root
+      register: restarted_successfully  
